@@ -938,6 +938,7 @@ function initDossiers() {
         image.src = project.image;
         image.alt = project.imageCaption || `${project.name} promotional artwork`;
         image.loading = "lazy";
+        image.decoding = "async";
         figure.append(image, element("figcaption", "", project.imageCaption || "Promotional artwork · not a product screenshot"));
         section.append(figure);
       } else {
@@ -1240,25 +1241,48 @@ function initProjectRadar() {
   });
   window.addEventListener("resize", position);
   if (!prefersReduced) {
-    let start = 0;
+    let frame = 0;
+    let last = 0;
     let previousAngle = 0;
+    let inView = !("IntersectionObserver" in window);
     const scan = (now) => {
-      if (!start) start = now;
-      const angle = ((now - start) % 8000) / 8000 * Math.PI * 2;
+      frame = 0;
+      if (!inView || document.hidden) return;
+      if (!last) last = now;
+      const angle = (previousAngle + (now - last) / 8000 * Math.PI * 2) % (Math.PI * 2);
+      last = now;
       sweep.setAttribute("transform", `rotate(${angle * 180 / Math.PI} 300 300)`);
       projects.forEach((project) => {
         const crossed = angle >= previousAngle ? project.angle > previousAngle && project.angle <= angle : project.angle > previousAngle || project.angle <= angle;
         if (crossed) {
-          project.element.classList.remove("is-scanning");
-          void project.element.getBoundingClientRect();
           project.element.classList.add("is-scanning");
           setTimeout(() => project.element.classList.remove("is-scanning"), 1000);
         }
       });
       previousAngle = angle;
-      requestAnimationFrame(scan);
+      frame = requestAnimationFrame(scan);
     };
-    requestAnimationFrame(scan);
+    const startScan = () => {
+      if (!frame && inView && !document.hidden) frame = requestAnimationFrame(scan);
+    };
+    const stopScan = () => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = 0;
+      last = 0;
+    };
+    if ("IntersectionObserver" in window) {
+      const observer = new IntersectionObserver((entries) => {
+        inView = entries[0].isIntersecting;
+        if (inView) startScan();
+        else stopScan();
+      });
+      observer.observe(layout);
+    }
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) stopScan();
+      else startScan();
+    });
+    startScan();
   }
 }
 
